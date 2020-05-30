@@ -9,6 +9,17 @@ from datetime import datetime, timedelta
 from faker import Faker
 
 class Transaction:
+    """
+    Class that represents a transaction between two entities.
+
+    When initializing a Transaction class, include the following parameters:
+        origin:            (String) The source of the transaction.  This can be a credit card number, phone number, or email.
+        destination:       (String) The target of the transaction.  This can be a company, phone number, or email.
+        date:              (Datetime) A datetime object representing when the transaction occured. 
+        amount:            (Int) A whole number representing how much of the transaction item was transferred. (Optional)
+        transaction_type:  (String) The type of transaction that occured.  Valid types are "money", "email", or "phonecall"
+
+    """
     def __init__(self, origin=None, destination=None, date=None, amount=None, transaction_type=None, x=None, y=None):
         self.origin = origin
         self.destination = destination
@@ -18,10 +29,47 @@ class Transaction:
         self.x = x
         self.y = y
 
+        self._validate_input_parameters()
+
     def __repr__(self):
         return repr((self.origin, self.destination, self.date, self.amount, self.transaction_type))
 
+    def _validate_input_parameters(self):
+        """ Validates the input parameters to determine they are of correct type and appropriate value.
+
+        Raises:
+            TypeError: Origin is not of type string.
+            TypeError: Desination is not of type string.
+            TypeError: Amount is not of type integer.
+            TypeError: Transaction is not of type string.
+            ValueError: Transaction Type was presented with an invalid string.
+        """
+        if type(self.origin) != str:
+            print("Origin only accepts string inputs.")
+            raise TypeError
+
+        if type(self.destination) != str:
+            print("Destination only accepts string inputs.")
+            raise TypeError
+
+        if type(self.amount) != int and self.amount is not None:
+            print("Amount only accepts integer inputs.")
+            raise TypeError
+
+        if type(self.transaction_type) != str:
+            print("Transaction types only accepts string inputs.")
+            raise TypeError
+
+        if self.transaction_type not in ['money', 'phonecall', 'email']:
+            print("Transaction type only accepts 'money', 'email', or 'phonecall' as inputs.")
+            raise ValueError
+    
     def to_dict(self):
+        """Method to export the class as a dictionary with a specific structure.
+
+        Returns:
+            [Dict] -- Dictionary representation of the class
+        """
         return {"origin": self.origin,
                 "destination": self.destination,
                 "date": self.date,
@@ -32,6 +80,18 @@ class Transaction:
         
 
 class Person:
+    """
+    Class representation of a person.  Includes methods for adding additional details regarding person.
+
+    When initializing a Person class the follow elements are needed:
+        name:      (String) The name of the fake person.
+        company:   (String) The fake company that employs the fake person.
+        ssn:       (String) A fake social security number
+        address:   (String) A valid address for the person.  This address will be geocoded.
+        job:       (String) The job title for the person
+        email:     (String) A person email account for the person.
+        birthday:  (Date) The date of birth of the person.  This should be presented as a datetime object.
+    """
     def __init__(self, name, company, ssn, address, job, email, birthday):
         self.name = name
         self.company = company
@@ -55,6 +115,11 @@ class Person:
         return repr((self._name, self._ssn, self._company))
 
     def to_dict(self):
+        """Method to convert the class into a dictionary. Attaches any attributes assigned to the class.
+
+        Returns:
+            [Dict] -- Dictionary representation of the class.
+        """
         person = {"name": self.name,
                   "company": self.company,
                   "ssn": self.ssn,
@@ -187,12 +252,39 @@ class Person:
         self._location_y = value
 
     def add_credit_card_transaction(self, transaction=None):
+        """Method for adding credit card transactions to the class.
+        This method takes the input and appends it to the credit_card_transactions list
+        that is defined in the __init__ method.  
+
+        Keyword Arguments:
+            transaction {Transaction} -- Takes an input Transaction class object 
+                                         and appends it to the credit_card_transactions 
+                                         list. (default: {None})
+        """
         self._credit_card_transactions.append(transaction)
 
     def add_email_transaction(self, transaction=None):
+        """Method for adding email transactions to the class.
+        This method takes the input and appends it to the email_transactions list
+        that is defined in the __init__ method.  
+
+        Keyword Arguments:
+            transaction {Transaction} -- Takes an input Transaction class object 
+                                         and appends it to the email_transactions 
+                                         list. (default: {None})
+        """
         self._email_transactions.append(transaction)
 
     def add_phone_transaction(self, transaction=None):
+        """Method for adding phone transactions to the class.
+        This method takes the input and appends it to the phone_transactions list
+        that is defined in the __init__ method.  
+
+        Keyword Arguments:
+            transaction {Transaction} -- Takes an input Transaction class object 
+                                         and appends it to the phone_transactions 
+                                         list. (default: {None})
+        """
         self._phone_transactions.append(transaction)
 
     def get_credit_card_transactions(self):
