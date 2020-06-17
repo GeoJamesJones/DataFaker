@@ -4,7 +4,9 @@ import random
 import requests
 
 import pandas as pd
+import networkx as nx
 
+from copy import deepcopy
 from datetime import datetime, timedelta
 from faker import Faker
 
@@ -46,10 +48,13 @@ class Person:
         self.phone_number = None
         self.location_x = None
         self.location_y = None
+        self.employee_number = None
+        
         
         self.credit_card_transactions = []
         self.email_transactions = []
         self.phone_transactions = []
+        self.coworker = []
 
     def __repr__(self):
         return repr((self._name, self._ssn, self._company))
@@ -64,19 +69,19 @@ class Person:
                   "birthday": self.birthday}
 
         
-        try: person["work-email"] = self.work_email
+        try: person["work-email"] = self._work_email
         except: pass
 
-        try: person["credit_card"] = self.credit_card
+        try: person["credit_card"] = self._credit_card
         except: pass
 
-        try: person["phone_number"] = self.phone_number
+        try: person["phone_number"] = self._phone_number
         except: pass
 
-        try: person["x"] = self.location_x
+        try: person["x"] = self._location_x
         except: pass
 
-        try: person["y"] = self.location_y
+        try: person["y"] = self._location_y
         except: pass
 
         return person
@@ -129,6 +134,20 @@ class Person:
     @birthday.setter
     def birthday(self, value):
         self._birthday = value
+
+    @property
+    def coworker(self):
+        return self._coworker
+    @coworker.setter
+    def coworker(self, value):
+        self._coworker = value
+
+    @property
+    def employee_number(self):
+        return self._employee_number
+    @employee_number.setter
+    def employee_number(self, value):
+        self._employee_number = value
 
     @property
     def work_email(self):
@@ -195,6 +214,19 @@ class Person:
     def add_phone_transaction(self, transaction=None):
         self._phone_transactions.append(transaction)
 
+    def add_coworker(self, coworker=None):
+        self._coworker.append(coworker)
+
+    def get_coworkers(self):
+        coworkers = []
+        worker = self.to_dict()
+        for c in self._coworker:
+            coworker = deepcopy(worker)
+            coworker['coworker'] = c
+            coworkers.append(coworker)
+
+        return coworkers
+
     def get_credit_card_transactions(self):
         transactions = []
 
@@ -226,6 +258,8 @@ class DataFaker:
         self.fake = Faker()
         Faker.seed(0)
 
+        self.G = None
+
         self.start_date = datetime.today() - timedelta(days=30)
 
         self.people = []
@@ -238,12 +272,10 @@ class DataFaker:
         self.execute()
 
     def _get_companies_list(self):
-        for person in self.people:
-            self.companies.append(person.company)
+        self.companies = [person.company for person in self.people]
 
     def _get_email_list(self):
-        for person in self.people:
-            self.email_addresses.append(person.work_email)
+        self.email_addresses = [person.work_email for person in self.people]
 
     def geocode_address(self, address=None):
         """Use World Geocoder to get XY for one address at a time."""
@@ -257,11 +289,25 @@ class DataFaker:
         location = j['candidates'][0]['location']  # returns first location as X, Y
         return location
     
-    def _create_fake_people(self):
+    def _create_random_graph(self, graph_type=None, number_of_people=0):
+        if graph_type not in ['Tree', 'Random']:
+            print("Please enter a valid random graph type.")
+            raise ValueError
 
-        num_people = int(input("How many people would you like to create? (Please enter whole number):  "))
+        if number_of_people == 0:
+            print("Please enter a number greater than zero for the number of people")
+            raise ValueError
 
-        if num_people > 0:
+        if graph_type == 'Tree' and number_of_people > 0:
+            self.G = nx.random_tree(number_of_people)
+            return True
+        
+        if graph_type == 'Random':
+            return False
+    
+    def _create_fake_people(self, number_of_people=0):
+
+        if number_of_people > 0 and self.G is None:
             for _ in range(num_people):
                 profile = self.fake.profile()
                 person = Person(name=profile['name'],
@@ -282,7 +328,51 @@ class DataFaker:
                 self.people.append(person)
                 print(person)
 
-        return
+            return
+
+        if number_of_people > 0 and self.G is not None:
+            count = 0
+
+            company = ""
+
+            for node in self.G.nodes(data=True):
+                profile = self.fake.profile()
+
+                if count == 0:
+                    company = profile['company']
+                else:
+                    profile['company'] = company
+
+                self.G.nodes[count]['name'] = profile['name']
+
+                person = Person(name=profile['name'],
+                                company=profile['company'],
+                                ssn=profile['ssn'],
+                                address=profile['residence'],
+                                job=profile['job'],
+                                email=profile['mail'],
+                                birthday=profile['birthdate'])
+
+                location = self.geocode_address(profile['residence'])
+
+                self.company_addresses[profile['company']] = location
+                
+                person.location_x = location['x']
+                person.location_y = location['y']
+
+                person.employee_number = count
+
+                self.people.append(person)
+                count +=1
+
+                print(person)
+
+            for person in self.people:
+                neighbor_list = list(nx.neighbors(self.G, person.employee_number))
+                for neighbor in neighbor_list:
+                    person.add_coworker(self.G.nodes[neighbor]['name'])
+
+            return
 
     def _create_fake_work_email(self):
         work_email = str(input("Would you like a work email addresses created? (y/n):  "))
@@ -396,6 +486,11 @@ class DataFaker:
                 for call in person.get_phone_transactions():
                     data.append(call)
 
+        elif transaction_type is "coworker":
+            for person in self.people:
+                for coworker in person.get_coworkers():
+                    data.append(coworker)
+        
         elif transaction_type is "people":
             for person in self.people:
                 data.append(person.to_dict())
@@ -405,7 +500,13 @@ class DataFaker:
     
     def execute(self):
 
-        self._create_fake_people()
+        num_people = int(input("How many people would you like to create? (Please enter whole number):  "))
+        graph_type = str(input("What type of graph would you like to create? (Tree or Random): "))
+        print(graph_type, num_people)
+        
+        tree = self._create_random_graph(graph_type, num_people)
+
+        self._create_fake_people(num_people)
         self._get_companies_list()
 
         phone_number = self._create_fake_phone_number()
@@ -425,5 +526,7 @@ class DataFaker:
             self._to_pandas_dataframe("money")
 
         self._to_pandas_dataframe("people")
+        if tree:
+            self._to_pandas_dataframe("coworker")
 
 DataFaker()
