@@ -1,6 +1,8 @@
 import json
+import math
 import os
 import random
+from typing import List
 import requests
 
 import pandas as pd
@@ -270,7 +272,7 @@ class Person:
     def location_y(self, value):
         self._location_y = value
 
-    def add_credit_card_transaction(self, transaction=None):
+    def add_credit_card_transaction(self, transaction=None) -> Transaction:
         """Method for adding credit card transactions to the class.
         This method takes the input and appends it to the credit_card_transactions list
         that is defined in the __init__ method.  
@@ -282,7 +284,7 @@ class Person:
         """
         self._credit_card_transactions.append(transaction)
 
-    def add_email_transaction(self, transaction=None):
+    def add_email_transaction(self, transaction=None) -> Transaction:
         """Method for adding email transactions to the class.
         This method takes the input and appends it to the email_transactions list
         that is defined in the __init__ method.  
@@ -294,7 +296,7 @@ class Person:
         """
         self._email_transactions.append(transaction)
 
-    def add_phone_transaction(self, transaction=None):
+    def add_phone_transaction(self, transaction=None) -> Transaction:
         """Method for adding phone transactions to the class.
         This method takes the input and appends it to the phone_transactions list
         that is defined in the __init__ method.  
@@ -306,7 +308,7 @@ class Person:
         """
         self._phone_transactions.append(transaction)
 
-    def add_coworker(self, coworker=None):
+    def add_coworker(self, coworker=None) -> str:
         self._coworker.append(coworker)
 
     def get_coworkers(self):
@@ -347,8 +349,10 @@ class Person:
 class DataFaker:
     def __init__(self):
         
+        rand_seed = random.randint(0, 50)
+        
         self.fake = Faker()
-        Faker.seed(0)
+        Faker.seed(rand_seed)
 
         self.G = None
 
@@ -382,7 +386,7 @@ class DataFaker:
         return location
     
     def _create_random_graph(self, graph_type=None, number_of_people=0):
-        if graph_type not in ['Tree', 'Random']:
+        if graph_type not in ['Tree', 'Ring of Cliques', 'Random']:
             print("Please enter a valid random graph type.")
             raise ValueError
 
@@ -393,6 +397,13 @@ class DataFaker:
         if graph_type == 'Tree' and number_of_people > 0:
             self.G = nx.random_tree(number_of_people)
             return True
+
+        if graph_type == 'Ring of Cliques':
+            num_cliques = random.randint(5, 10)
+            clique_size = random.randint(3, 6)
+            prob = random.random()
+            self.G = nx.relaxed_caveman_graph(num_cliques, clique_size, prob)
+            return True
         
         if graph_type == 'Random':
             return False
@@ -400,7 +411,7 @@ class DataFaker:
     def _create_fake_people(self, number_of_people=0):
 
         if number_of_people > 0 and self.G is None:
-            for _ in range(num_people):
+            for _ in range(number_of_people):
                 profile = self.fake.profile()
                 person = Person(name=profile['name'],
                                 company=profile['company'],
@@ -428,6 +439,7 @@ class DataFaker:
             company = ""
 
             for node in self.G.nodes(data=True):
+                
                 profile = self.fake.profile()
 
                 if count == 0:
@@ -445,25 +457,27 @@ class DataFaker:
                                 email=profile['mail'],
                                 birthday=profile['birthdate'])
 
-                location = self.geocode_address(profile['residence'])
+                try:
+                    location = self.geocode_address(profile['residence'])
 
-                self.company_addresses[profile['company']] = location
-                
-                person.location_x = location['x']
-                person.location_y = location['y']
+                    self.company_addresses[profile['company']] = location
+                    
+                    person.location_x = location['x']
+                    person.location_y = location['y']
 
-                person.employee_number = count
+                    person.employee_number = count
 
-                self.people.append(person)
-                count +=1
+                    self.people.append(person)
+                    count +=1
 
-                print(person)
+                    print(person)
+                except json.JSONDecodeError as e:
+                    print(f"Error processing record {str(count)}")
 
             for person in self.people:
                 neighbor_list = list(nx.neighbors(self.G, person.employee_number))
                 for neighbor in neighbor_list:
                     person.add_coworker(self.G.nodes[neighbor]['name'])
-
             return
 
     def _create_fake_work_email(self):
@@ -560,6 +574,54 @@ class DataFaker:
                     if transaction.origin != transaction.destination:
                         person.add_phone_transaction(transaction)
 
+    def _generate_inmate_transactions(self, transaction_type=None, inmate_list=None):
+            transactions = str(input(f"Would you like to generate fake {transaction_type} transactions? (y/n):  "))
+
+            if transactions not in ['y', 'n']:
+                print("Invalid selection.  Please enter y or n.")
+                transactions = str(input(f"Would you like to generate fake {transaction_type} transactions? (y/n):  "))
+            
+
+            for person in self.people:
+                for _ in range(random.randint(1, 10)):
+
+                    if transaction_type is "money":
+                        receiving_party = random.choice(inmate_list)
+                        transaction = Transaction(origin=person.credit_card,
+                                                destination=receiving_party,
+                                                date=self.fake.date_time_between(self.start_date, end_date='now'),
+                                                amount=random.randint(1, 50),
+                                                transaction_type=transaction_type,
+                                                x=person.location_x,
+                                                y=person.location_y)
+
+
+                        person.add_credit_card_transaction(transaction)
+
+                    elif transaction_type is "email":
+                        transaction = Transaction(origin=person.work_email,
+                                                destination=random.choice(inmate_list),
+                                                date=self.fake.date_time_between(self.start_date, end_date='now'),
+                                                amount=None,
+                                                transaction_type=transaction_type,
+                                                x=person.location_x,
+                                                y=person.location_y)
+
+                        if transaction.origin != transaction.destination:
+                            person.add_email_transaction(transaction)
+
+                    elif transaction_type is "phonecall":
+                        transaction = Transaction(origin=person.phone_number,
+                                                destination=random.choice(inmate_list),
+                                                date=self.fake.date_time_between(self.start_date, end_date='now'),
+                                                amount=None,
+                                                transaction_type=transaction_type,
+                                                x=person.location_x,
+                                                y=person.location_y)
+
+                        if transaction.origin != transaction.destination:
+                            person.add_phone_transaction(transaction)
+
     def _to_pandas_dataframe(self, transaction_type=None):
         data = []
         
@@ -588,16 +650,75 @@ class DataFaker:
                 data.append(person.to_dict())
 
         df = pd.DataFrame(data)
-        df.to_csv(transaction_type + ".csv")           
+        df.to_csv(transaction_type + ".csv")
+
+    def _to_d3_json(self):
+        d3_json = str(input("Would you like to export to D3 JSON?  "))
+        if d3_json == 'y':
+            from networkx.readwrite import json_graph
+            import json
+
+            d3_json_data = json_graph.node_link_data(self.G)
+
+            with open("data.json", "w") as jsonfile:
+                json.dump(d3_json_data, jsonfile, indent=4)
+        
+        else:
+            pass
+
+    def _import_inmate_data(self, csv_file: str) -> List:
+        import csv
+
+        inmates = []
+        with open(csv_file, 'r') as csvfile:
+            reader = csv.reader(csvfile, delimiter=',')
+            for row in reader:
+                inmates.append(row[0])
+        
+        return list(set(inmates))
+
+    
     
     def execute(self):
 
-        num_people = int(input("How many people would you like to create? (Please enter whole number):  "))
-        graph_type = str(input("What type of graph would you like to create? (Tree or Random): "))
-        print(graph_type, num_people)
+        inmate_data = str(input("Would you like to import existing inmate data?: "))
+
+        if inmate_data == 'Yes' or inmate_data == 'y':
+            csv_path = str(input("What is the path to input inmate dataset?: "))
+            inmates = self._import_inmate_data(csv_file=csv_path)
+
+            num_people = math.ceil(len(inmates) * .6)
+            
+            self._create_fake_people(num_people)
+            
+            phone_number = self._create_fake_phone_number()
+            if phone_number:
+                self._generate_inmate_transactions("phonecall", inmates)
+                self._to_pandas_dataframe("phonecall")
+
+            email = self._create_fake_work_email()
+            if email:
+                self._get_email_list()
+                self._generate_inmate_transactions("email", inmates)
+                self._to_pandas_dataframe("email")
+            
+            credit_card = self._create_fake_credit_card()
+            if credit_card:
+                self._generate_inmate_transactions("money", inmates)
+                self._to_pandas_dataframe("money")
+
+            self._to_pandas_dataframe("people")
+
+            exit()
+        
+        graph_type = str(input("What type of graph would you like to create? (Tree, Ring of Cliques, or Random): "))
+        if graph_type != 'Ring of Cliques':
+            num_people = int(input("How many people would you like to create? (Please enter whole number):  "))
+        else:
+            num_people = 1
         
         tree = self._create_random_graph(graph_type, num_people)
-
+        
         self._create_fake_people(num_people)
         self._get_companies_list()
 
@@ -620,5 +741,7 @@ class DataFaker:
         self._to_pandas_dataframe("people")
         if tree:
             self._to_pandas_dataframe("coworker")
+
+        self._to_d3_json()
 
 DataFaker()
